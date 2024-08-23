@@ -108,7 +108,7 @@ const ChatApp = () => {
 
   return (
     <div className="flex flex-col h-screen w-full mx-auto p-4 bg-gray-100">
-      <div className="flex-1 overflow-y-auto mb-4">
+      <div className="flex-1 overflow-y-auto mb-[80px]"> {/* Adjust the margin-bottom to account for the fixed input area */}
         {messages.map((msg, index) => (
           <div
             key={msg.id} // Use message ID as the key
@@ -147,7 +147,7 @@ const ChatApp = () => {
         ))}
         <div ref={messagesEndRef} /> {/* This div is used for scrolling */}
       </div>
-      <div className="flex items-center">
+      <div className="fixed bottom-0 left-0 right-0 bg-white p-4 flex items-center border-t"> {/* Fixed at the bottom */}
         <input
           ref={inputRef}
           type="text"
