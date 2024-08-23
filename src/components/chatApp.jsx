@@ -1,6 +1,6 @@
 // ChatApp.jsx
 "use client"
-import client, { account, db, dbId, messageCollectionId } from '@/appwriteConfig';
+import client, { db, dbId, messageCollectionId } from '@/appwriteConfig';
 import React, { useState, useRef, useEffect } from 'react';
 import { IoTrashBin } from "react-icons/io5";
 import { NameGen as randomName } from "@/helper/randomeName";
@@ -11,51 +11,31 @@ const ChatApp = () => {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const inputRef = useRef(null);
-  const messagesEndRef = useRef(null); // Ref for scrolling
+  const messagesEndRef = useRef(null);
 
   useEffect(() => {
-    getMessages();
+    fetchMessages();
 
- // Subscribe to real-time updates
- const unsubscribe = client.subscribe(`documents`, response => {
-  console.log(response)
+    const unsubscribe = client.subscribe('documents', (response) => {
+      if (response.events.includes("databases.*.collections.*.documents.*.create")) {
+        if (response.payload.name !== user) {
+          addMessage(response.payload.message, response.payload.name, response.payload.$id);
+        }
+      }
 
-  // hceking event is create
-  if (response.events.includes("databases.*.collections.*.documents.*.create")){
-    if (response.payload.name !== user){
-      setMessages(prevMessages => [...prevMessages, {
-        text: response.payload.message,
-        direction: response.payload.name === user ? 'sent' : 'received',
-        name: response.payload.name,
-      }]);
-    }
-  }
+      if (response.events.includes("databases.*.collections.*.documents.*.delete")) {
+        removeMessageById(response.payload.$id);
+      }
+    });
 
-  // deleting
-  if (response.events.includes("databases.*.collections.*.documents.*.delete")){
-    if (response.payload.name !== user){
-      setMessages(prevMessages => prevMessages.filter(msg => msg.id !== response.payload.$id));
-    }
-  }
-
-  //)
-
-  // response will have the new message just add it to th e array
-//  if (response.event){}
-  
-});
-
-// Clean up the subscription on component unmount
-return () => unsubscribe();
-
-  }, []);
+    return () => unsubscribe(); // Clean up the subscription on component unmount
+  }, [user]);
 
   useEffect(() => {
-    // Scroll to bottom when messages change
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    scrollToBottom(); // Scroll to bottom whenever messages change
   }, [messages]);
 
-  const getMessages = async () => {
+  const fetchMessages = async () => {
     const resp = await db.listDocuments(dbId, messageCollectionId);
     const fetchedMessages = resp.documents.map(doc => ({
       text: doc.message,
@@ -66,13 +46,21 @@ return () => unsubscribe();
     setMessages(fetchedMessages);
   };
 
+  const addMessage = (text, name, id) => {
+    setMessages(prevMessages => [
+      ...prevMessages,
+      { text, direction: name === user ? 'sent' : 'received', name, id }
+    ]);
+  };
+
   const handleSendMessage = async () => {
     if (input.trim()) {
-      await db.createDocument(dbId, messageCollectionId, ID.unique(), {
+      const newMessage = {
         message: input.trim(),
         name: user,
-      });
-      setMessages([...messages, { text: input, direction: 'sent', name: user }]);
+      };
+      const newDoc = await db.createDocument(dbId, messageCollectionId, ID.unique(), newMessage);
+      addMessage(newMessage.message, user, newDoc.$id);
       setInput('');
       inputRef.current.focus(); // Refocus the input field
     }
@@ -92,19 +80,25 @@ return () => unsubscribe();
     }
   };
 
+  const removeMessageById = (id) => {
+    setMessages(prevMessages => prevMessages.filter(msg => msg.id !== id));
+  };
+
   const handleDeleteMessage = async (index) => {
-    const messageId = messages[index].id; // Assuming you have an id field for each message
-    console.log(messageId)
-    setMessages(messages.filter((_, i) => i !== index));
-    try{
+    const messageId = messages[index].id;
+    removeMessageById(messageId);
+    try {
       await db.deleteDocument(dbId, messageCollectionId, messageId);
-    }catch(e){null}
+    } catch (error) {
+      console.error("Failed to delete message:", error);
+    }
+  };
 
-
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
   useEffect(() => {
-    // Add event listener for clicks outside input field
     document.addEventListener('click', handleClick);
 
     return () => {
@@ -117,8 +111,8 @@ return () => unsubscribe();
       <div className="flex-1 overflow-y-auto mb-4">
         {messages.map((msg, index) => (
           <div
-            key={index}
-            className="relative flex flex-col mb-2 group" // Added group class
+            key={msg.id} // Use message ID as the key
+            className="relative flex flex-col mb-2 group"
           >
             <div className={`text-xs font-semibold ${msg.direction === 'sent' ? 'text-blue-600 text-end' : 'text-gray-600'}`}>
               {msg.name}
@@ -133,19 +127,21 @@ return () => unsubscribe();
               </div>
             </div>
             {
-              msg.direction === 'sent' ? (<>
-              <div
-              className="absolute top-0 left-0 mt-1 mr-2 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer" // Updated positioning
-              onClick={() => handleDeleteMessage(index)}
-            >
-              <IoTrashBin className="text-red-500" />
-            </div></>) : (<>
-              <div
-              className="absolute top-0 right-0 mt-1 mr-2 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer" // Updated positioning
-              onClick={() => handleDeleteMessage(index)}
-            >
-              <IoTrashBin className="text-red-500" />
-            </div></>)
+              msg.direction === 'sent' ? (
+                <div
+                  className="absolute top-0 left-0 mt-1 mr-2 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                  onClick={() => handleDeleteMessage(index)}
+                >
+                  <IoTrashBin className="text-red-500" />
+                </div>
+              ) : (
+                <div
+                  className="absolute top-0 right-0 mt-1 mr-2 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                  onClick={() => handleDeleteMessage(index)}
+                >
+                  <IoTrashBin className="text-red-500" />
+                </div>
+              )
             }
           </div>
         ))}
